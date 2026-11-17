@@ -24,7 +24,7 @@ if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// Processamento dos formulários
+// Processamento dos formulários de cadastro
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $token = $_POST['csrf_token'] ?? '';
@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
             }
 
-            // Valida o preço no formato 99.90
+            // Valida o preço
             if (!preg_match(
                 '/^\d{1,8}(\.\d{1,2})?$/',
                 $precoInformado
@@ -203,7 +203,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // RESPOSTA JSON PARA AJAX
-    // Novo trecho do passo 8
     if ($ajax) {
 
         header('Content-Type: application/json; charset=utf-8');
@@ -307,7 +306,7 @@ function h($valor) {
     <h2>Cadastro de Produtos</h2>
 
     <p class="text-muted">
-        Cadastre e gerencie os produtos do sistema.
+        Cadastre, gerencie e selecione produtos para a cesta.
     </p>
 
     <?php if ($mensagem !== ''): ?>
@@ -316,7 +315,7 @@ function h($valor) {
         </div>
     <?php endif; ?>
 
-    <!-- FORMULÁRIO -->
+    <!-- FORMULÁRIO DE CADASTRO -->
     <div class="card shadow-sm mb-4">
 
         <div class="card-body">
@@ -424,8 +423,8 @@ function h($valor) {
         </div>
     </div>
 
-    <!-- LISTAGEM -->
-    <div class="card shadow-sm">
+    <!-- LISTAGEM DE PRODUTOS -->
+    <div class="card shadow-sm mb-4">
 
         <div class="card-body">
 
@@ -451,7 +450,6 @@ function h($valor) {
 
                         <tr>
                             <td><?= h($p['id']) ?></td>
-
                             <td><?= h($p['nome']) ?></td>
 
                             <td>
@@ -469,7 +467,7 @@ function h($valor) {
 
                             <td>
 
-                                <!-- EDIÇÃO VIA JAVASCRIPT -->
+                                <!-- EDITAR -->
                                 <button
                                     type="button"
                                     class="btn btn-warning btn-sm btn-editar"
@@ -477,7 +475,7 @@ function h($valor) {
                                     Editar
                                 </button>
 
-                                <!-- EXCLUSÃO VIA AJAX -->
+                                <!-- EXCLUIR -->
                                 <form method="POST"
                                       class="d-inline form-excluir">
 
@@ -519,10 +517,110 @@ function h($valor) {
         </div>
     </div>
 
+    <!-- SELEÇÃO DE PRODUTOS PARA A CESTA -->
+    <div class="card shadow-sm">
+
+        <div class="card-body">
+
+            <h5>Selecionar Produtos para a Cesta</h5>
+
+            <p class="text-muted">
+                Marque os produtos que deseja adicionar.
+                Cada produto será incluído com quantidade igual a 1.
+            </p>
+
+            <form method="POST"
+                  action="cesta.php"
+                  id="formCesta">
+
+                <input type="hidden"
+                       name="csrf_token"
+                       value="<?= h($_SESSION['csrf_token']) ?>">
+
+                <input type="hidden"
+                       name="acao"
+                       value="adicionar">
+
+                <div class="table-responsive">
+
+                    <table class="table table-bordered table-hover">
+
+                        <thead>
+                            <tr>
+                                <th>Selecionar</th>
+                                <th>Produto</th>
+                                <th>Fornecedor</th>
+                                <th>Preço</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                        <?php foreach ($produtos as $p): ?>
+
+                            <tr>
+
+                                <td>
+                                    <input
+                                        type="checkbox"
+                                        class="form-check-input checkbox-produto"
+                                        name="produtos[]"
+                                        value="<?= h($p['id']) ?>">
+                                </td>
+
+                                <td><?= h($p['nome']) ?></td>
+
+                                <td>
+                                    <?= h($p['fornecedor_nome']) ?>
+                                </td>
+
+                                <td>
+                                    R$ <?= number_format(
+                                        (float)$p['preco'],
+                                        2,
+                                        ',',
+                                        '.'
+                                    ) ?>
+                                </td>
+
+                            </tr>
+
+                        <?php endforeach; ?>
+
+                        </tbody>
+                    </table>
+
+                </div>
+
+                <?php if (count($produtos) > 0): ?>
+
+                    <button type="submit"
+                            class="btn btn-success">
+                        Adicionar à Cesta
+                    </button>
+
+                <?php else: ?>
+
+                    <p class="text-muted">
+                        Cadastre produtos antes de utilizar a cesta.
+                    </p>
+
+                <?php endif; ?>
+
+                <a href="cesta.php"
+                   class="btn btn-outline-primary">
+                    Visualizar Cesta
+                </a>
+
+            </form>
+
+        </div>
+    </div>
+
 </div>
 
 <script>
-// Preenche o formulário com os dados do produto
+// Preenche o formulário para edição
 function editarProduto(p) {
 
     document.getElementById('produtoId').value = p.id;
@@ -559,9 +657,10 @@ document.addEventListener('click', function(evento) {
 
     editarProduto(JSON.parse(botao.dataset.produto));
 });
+
 </script>
 
-<!-- Carrega o AJAX do passo 8 -->
+<!-- AJAX do passo 8 -->
 <script src="script.js"></script>
 
 </body>
