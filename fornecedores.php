@@ -1,4 +1,3 @@
-
 <?php
 session_start();
 require_once 'conexao.php';
@@ -15,6 +14,11 @@ $pdo = conectar();
 $mensagem = "";
 $tipoMensagem = "success";
 
+// Identifica requisições AJAX
+$ajax = (
+    $_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''
+) === 'XMLHttpRequest';
+
 // Proteção contra envio de formulários de outros sites
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -25,9 +29,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $token = $_POST['csrf_token'] ?? '';
 
-    if (!hash_equals($_SESSION['csrf_token'], $token)) {
-        http_response_code(403);
-        exit("Requisição inválida.");
+    if (!is_string($token) ||
+        !hash_equals($_SESSION['csrf_token'], $token)) {
+
+        if ($ajax) {
+            header('Content-Type: application/json; charset=utf-8');
+            http_response_code(403);
+
+            echo json_encode([
+                'sucesso' => false,
+                'mensagem' => 'Requisição inválida.'
+            ]);
+        } else {
+            http_response_code(403);
+            echo "Requisição inválida.";
+        }
+
+        exit;
     }
 
     $acao = $_POST['acao'] ?? '';
@@ -37,8 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // CADASTRAR OU EDITAR
         if ($acao === 'salvar') {
 
+            $idInformado = $_POST['id'] ?? '';
+
             $id = filter_var(
-                $_POST['id'] ?? '',
+                $idInformado,
                 FILTER_VALIDATE_INT
             );
 
@@ -47,6 +67,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $telefone = trim($_POST['telefone'] ?? '');
             $email = trim($_POST['email'] ?? '');
             $endereco = trim($_POST['endereco'] ?? '');
+
+            // Validações
+            if ($idInformado !== '' && (!$id || $id <= 0)) {
+                throw new Exception("Fornecedor inválido.");
+            }
 
             if ($nome === '') {
                 throw new Exception(
@@ -69,10 +94,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
             }
 
-            if (strlen($cnpj) > 18 ||
+            if (
+                strlen($cnpj) > 18 ||
                 strlen($telefone) > 30 ||
                 strlen($email) > 190 ||
-                strlen($endereco) > 255) {
+                strlen($endereco) > 255
+            ) {
                 throw new Exception(
                     "Um dos campos ultrapassou o limite permitido."
                 );
@@ -80,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($id) {
 
-                // Atualiza um fornecedor existente
+                // Atualiza fornecedor existente
                 $sql = "UPDATE fornecedores SET
                             nome = ?,
                             cnpj = ?,
@@ -104,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             } else {
 
-                // Cadastra um novo fornecedor
+                // Cadastra novo fornecedor
                 $sql = "INSERT INTO fornecedores
                         (nome, cnpj, telefone, email, endereco)
                         VALUES (?, ?, ?, ?, ?)";
@@ -162,6 +189,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mensagem = $e->getMessage();
         $tipoMensagem = "danger";
     }
+
+    // RESPOSTA JSON PARA AJAX
+    // Este é o novo trecho do passo 8
+    if ($ajax) {
+
+        header('Content-Type: application/json; charset=utf-8');
+
+        $sucesso = $tipoMensagem === 'success';
+
+        if (!$sucesso) {
+            http_response_code(400);
+        }
+
+        echo json_encode([
+            'sucesso' => $sucesso,
+            'mensagem' => $mensagem
+        ]);
+
+        exit;
+    }
 }
 
 // Busca todos os fornecedores
@@ -171,7 +218,7 @@ $stmt = $pdo->query(
 
 $fornecedores = $stmt->fetchAll();
 
-// Função para evitar problemas ao exibir textos
+// Função para exibir textos com segurança
 function h($valor) {
     return htmlspecialchars(
         (string)($valor ?? ''),
@@ -379,15 +426,16 @@ function h($valor) {
 
                             <td>
 
-                                <button type="button"
-                                        class="btn btn-warning btn-sm btn-editar"
-                                        data-fornecedor="<?= h(json_encode($f, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG)) ?>">
+                                <button
+                                    type="button"
+                                    class="btn btn-warning btn-sm btn-editar"
+                                    data-fornecedor="<?= h(json_encode($f, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG)) ?>">
                                     Editar
                                 </button>
 
+                                <!-- Exclusão via AJAX -->
                                 <form method="POST"
-                                      class="d-inline"
-                                      onsubmit="return confirm('Deseja excluir este fornecedor?')">
+                                      class="d-inline form-excluir">
 
                                     <input type="hidden"
                                            name="csrf_token"
@@ -457,12 +505,19 @@ function limparFormulario() {
         'Novo Fornecedor';
 }
 
-document.querySelectorAll('.btn-editar').forEach(botao => {
-    botao.addEventListener('click', () => {
-        editarFornecedor(JSON.parse(botao.dataset.fornecedor));
-    });
+// Delegação de eventos: funciona mesmo após atualizar a tabela
+document.addEventListener('click', function(evento) {
+
+    const botao = evento.target.closest('.btn-editar');
+
+    if (!botao || !botao.dataset.fornecedor) return;
+
+    editarFornecedor(JSON.parse(botao.dataset.fornecedor));
 });
 </script>
+
+<!-- Carrega o AJAX do passo 8 -->
+<script src="script.js"></script>
 
 </body>
 </html>

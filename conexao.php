@@ -1,4 +1,3 @@
-
 <?php
 
 // Dados de acesso ao MySQL

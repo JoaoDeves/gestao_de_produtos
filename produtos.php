@@ -1,4 +1,3 @@
-
 <?php
 session_start();
 require_once 'conexao.php';
@@ -15,6 +14,11 @@ $pdo = conectar();
 $mensagem = "";
 $tipoMensagem = "success";
 
+// Identifica requisições AJAX
+$ajax = (
+    $_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''
+) === 'XMLHttpRequest';
+
 // Proteção dos formulários
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -25,10 +29,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $token = $_POST['csrf_token'] ?? '';
 
-    if (!is_string($token) ||
-        !hash_equals($_SESSION['csrf_token'], $token)) {
-        http_response_code(403);
-        exit("Requisição inválida.");
+    if (
+        !is_string($token) ||
+        !hash_equals($_SESSION['csrf_token'], $token)
+    ) {
+
+        if ($ajax) {
+            header('Content-Type: application/json; charset=utf-8');
+            http_response_code(403);
+
+            echo json_encode([
+                'sucesso' => false,
+                'mensagem' => 'Requisição inválida.'
+            ]);
+        } else {
+            http_response_code(403);
+            echo "Requisição inválida.";
+        }
+
+        exit;
     }
 
     $acao = $_POST['acao'] ?? '';
@@ -38,22 +57,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // CADASTRAR OU EDITAR
         if ($acao === 'salvar') {
 
-            $idOriginal = $_POST['id'] ?? '';
+            $idInformado = $_POST['id'] ?? '';
+
             $id = filter_var(
-                $idOriginal,
+                $idInformado,
                 FILTER_VALIDATE_INT
             );
 
             $nome = trim($_POST['nome'] ?? '');
             $descricao = trim($_POST['descricao'] ?? '');
             $precoInformado = trim($_POST['preco'] ?? '');
+
             $fornecedorId = filter_var(
                 $_POST['fornecedor_id'] ?? '',
                 FILTER_VALIDATE_INT
             );
 
             // Validações
-            if ($idOriginal !== '' && (!$id || $id <= 0)) {
+            if (
+                $idInformado !== '' &&
+                (!$id || $id <= 0)
+            ) {
                 throw new Exception("Produto inválido.");
             }
 
@@ -98,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
             }
 
-            // Atualiza um produto
+            // ATUALIZAR PRODUTO
             if ($id) {
 
                 $sql = "UPDATE produtos SET
@@ -122,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             } else {
 
-                // Cadastra um produto
+                // CADASTRAR PRODUTO
                 $sql = "INSERT INTO produtos
                         (nome, descricao, preco, fornecedor_id)
                         VALUES (?, ?, ?, ?)";
@@ -140,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // EXCLUIR
+        // EXCLUIR PRODUTO
         elseif ($acao === 'excluir') {
 
             $id = filter_var(
@@ -177,16 +201,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mensagem = $e->getMessage();
         $tipoMensagem = "danger";
     }
+
+    // RESPOSTA JSON PARA AJAX
+    // Novo trecho do passo 8
+    if ($ajax) {
+
+        header('Content-Type: application/json; charset=utf-8');
+
+        $sucesso = $tipoMensagem === 'success';
+
+        if (!$sucesso) {
+            http_response_code(400);
+        }
+
+        echo json_encode([
+            'sucesso' => $sucesso,
+            'mensagem' => $mensagem
+        ]);
+
+        exit;
+    }
 }
 
-// Buscar fornecedores para o campo select
+// Busca os fornecedores para o campo select
 $stmt = $pdo->query(
-    "SELECT id, nome FROM fornecedores ORDER BY nome"
+    "SELECT id, nome FROM fornecedores ORDER BY nome ASC"
 );
 
 $fornecedores = $stmt->fetchAll();
 
-// Buscar produtos com seus fornecedores
+// Busca os produtos com seus fornecedores
 $stmt = $pdo->query("
     SELECT
         p.id,
@@ -198,7 +242,7 @@ $stmt = $pdo->query("
     FROM produtos p
     INNER JOIN fornecedores f
         ON p.fornecedor_id = f.id
-    ORDER BY p.nome
+    ORDER BY p.nome ASC
 ");
 
 $produtos = $stmt->fetchAll();
@@ -425,6 +469,7 @@ function h($valor) {
 
                             <td>
 
+                                <!-- EDIÇÃO VIA JAVASCRIPT -->
                                 <button
                                     type="button"
                                     class="btn btn-warning btn-sm btn-editar"
@@ -432,9 +477,9 @@ function h($valor) {
                                     Editar
                                 </button>
 
+                                <!-- EXCLUSÃO VIA AJAX -->
                                 <form method="POST"
-                                      class="d-inline"
-                                      onsubmit="return confirm('Deseja excluir este produto?')">
+                                      class="d-inline form-excluir">
 
                                     <input type="hidden"
                                            name="csrf_token"
@@ -477,6 +522,7 @@ function h($valor) {
 </div>
 
 <script>
+// Preenche o formulário com os dados do produto
 function editarProduto(p) {
 
     document.getElementById('produtoId').value = p.id;
@@ -494,6 +540,7 @@ function editarProduto(p) {
     });
 }
 
+// Limpa o formulário
 function limparFormulario() {
 
     document.getElementById('formProduto').reset();
@@ -503,12 +550,19 @@ function limparFormulario() {
         'Novo Produto';
 }
 
-document.querySelectorAll('.btn-editar').forEach(botao => {
-    botao.addEventListener('click', () => {
-        editarProduto(JSON.parse(botao.dataset.produto));
-    });
+// Delegação de eventos para o botão Editar
+document.addEventListener('click', function(evento) {
+
+    const botao = evento.target.closest('.btn-editar');
+
+    if (!botao || !botao.dataset.produto) return;
+
+    editarProduto(JSON.parse(botao.dataset.produto));
 });
 </script>
+
+<!-- Carrega o AJAX do passo 8 -->
+<script src="script.js"></script>
 
 </body>
 </html>
